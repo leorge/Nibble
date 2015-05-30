@@ -28,21 +28,8 @@
 
 /****   Public  ****/
 Trace   trace_level = TRACE_NONE;   // to debug
-size_t  medium_boundary = 1000;        //  nmemb to alternate to merge sort.
+size_t  medium_boundary = 8;        //  nmemb to alternate to merge sort.
 long    qsort_called, qsort_comp_str, qsort_moved;  // counters
-int     pivot_number = 3;
-double  random_number;
-
-void    (*medium_array)() = imerge_sort;
-
-void set_random(void) {
-    if (random_number == 0.0) {
-        random_number = rand()/(double)(RAND_MAX - 1);  // 0 <= random_number < 1
-#ifdef  DEBUG
-        if (trace_level >= TRACE_DUMP) fprintf(OUT, "random = %f\n", random_number);
-#endif
-    }
-}
 
 /****   Private ****/
 
@@ -60,7 +47,6 @@ static int cmpstring(const void *p1, const void *p2)    // Function to compare
 
 typedef enum {
     DUMMY,
-    POINTER_QSORT3,
     MERGE_INDEX,
     MERGE_POINTER,
     INSERT_LINEAR,
@@ -140,12 +126,10 @@ int main(int argc, char *argv[])
                 "hybrid sorting of quicksort : array sorting."},
             {'b', MERGE_INSERT_BINARY, "mi_pbin(*)", mi_pbin, TRUE,
                 "MI sort : pointer sorting with binary search."},
-            {'C', POINTER_QSORT3, "pqsort()", pqsort, TRUE,
-                "Pointer sorting of qsort(3)."},
             {'G', MERGE_POINTER, "merge_pointer(*)", merge_pointer, TRUE,
                 "merGe sort : pointer sorting (index sorting except indexing time)."},
 #ifdef  DEBUG
-            {'i', INSERT_LINEAR, "insert_linear()", insert_sort, FALSE,
+            {'i', INSERT_LINEAR, "insert_linear()", insert_linear, FALSE,
             "Insertion sort : linear search."},
             {'I', INSERT_BINARY, "insert_binary()", insert_binary, FALSE,
             "Insertion sort : binary search."},
@@ -170,7 +154,7 @@ int main(int argc, char *argv[])
     size_t  i;
     memset(optstring, 0, sizeof(optstring));
     for (info = test, p = optstring, i = 0; i++ < sizeof(test) / sizeof(INFO); info++) *p++ = (char)info->option;
-    strcat(optstring, "?A:B:N:pR:T:V:W:X:Y:Z:");
+    strcat(optstring, "?B:pN:R:T:V:Y:Z:");
     /**** Analyze command arguments ****/
     char    *prg = strrchr(argv[0], '/') + 1;   // Program name without path
     if (prg == NULL) prg = argv[0];
@@ -218,16 +202,6 @@ int main(int argc, char *argv[])
 				"\t-B : Boundary to switch algorithm or choice of pivot in hole scheme. (default is 8)\n"
 				"\t       If the value is less than 0 then value means depth.\n"
 				"\t       Else if the value is followed by % 0 then value means depth in percent.\n"
-            "\nAlgorithm option :\n"
-                "\t-A : Algorithm when nmemb is middle for array sort.\n"
-                "\t-X : Algorithm when nmemb is middle for indeX sort.\n"
-                "\n\tfunc : function for algorithm option\n"
-                "\t       G - GNU library qsort(3).\n"
-                "\t       b - Merge and bubble sort.\n"
-                "\t       l - Merge and insertion sort with linear search.\n"
-                "\t       m - Index sorting of merge sort. (default)\n"
-				"\t       a - Array sorting of merge sort for -A option.\n"
-				"\t       n - Merge and nibble insertion sort with binary search.\n"
 #ifdef DEBUG
             "\nTrace option :\n"
                 "\t-V 1 : Show Count.\n"
@@ -259,34 +233,11 @@ int main(int argc, char *argv[])
         case 'V':   // ignored in Release
             trace_level = strtoul(optarg, NULL, 0);
             break;
-        case 'W':
-            pivot_number = (int)strtoul(optarg, NULL, 0) | 1;   // make an odd number
-            break;
         case 'Y':
             buffer_length = (int)strtoul(optarg, NULL, 0);
             break;
         case 'Z':
             size = (size_t)strtoul(optarg, NULL, 0);
-            break;
-        case 'A':   // Algorithm when nmemb is middle for Array sort
-            switch(*optarg) {
-            case 'G':
-                medium_array = qsort;
-                break;
-            case 'n':
-                medium_array = mi_inblbin;
-                break;
-            case 'l':
-                medium_array = mi_isort;
-                break;
-            case 'm':
-                medium_array = imerge_sort;
-                break;
-            default:
-                fprintf(stderr, "Illegal value \"%s\" for -A option.\n", optarg);
-                return EXIT_FAILURE;
-                break;
-            }
             break;
         default:    // select sorting algorithm
             for (info = test, i = idx = 0; idx < sizeof(test) / sizeof(INFO); idx++, info++) {
@@ -362,15 +313,6 @@ int main(int argc, char *argv[])
     /***** Prepare *****/
 
     int skip = repeat_count > 1 ? 1: 0;
-    if (Boption < 0) {	// depth for hybrid sorting boundary
-    	medium_boundary = nmemb / pow(2.0, -Boption / (IsPercentB ? 100.0 / log2(nmemb): 1.0));
-    }
-    else if (Boption > 0) {	// size
-    	medium_boundary = IsPercentB ? (nmemb * Boption) / 100: Boption;
-    }
-#ifdef DEBUG
-    if (trace_level >= TRACE_DUMP && Boption != 0) fprintf(OUT, "medium_boundary = %ld\n", medium_boundary);
-#endif
 
 //#define   BUFCYCLE    2
     char    **workarea = (char **)malloc(sizeof(char *) * buffer_length);
@@ -419,7 +361,6 @@ QSORT:
     void **idxtbl;
     long *cache, *clear;
     srand((unsigned)time(NULL));
-    set_random();
     for (info = test,idx = 1; index != 0; idx <<= 1, info++) {
         if (index & idx) {
             index &= ~idx;  // clear bit
@@ -438,7 +379,6 @@ REDO:       fprintf(OUT, "%s", info->name);
             begin_timer(repeat_count);
             for (int i = 0; i < repeat_count; i++) {
                 qsort_comp_str = qsort_called = qsort_moved = 0;    // reset all of counters
-                if (repeat_count > 1) set_random();
                 workbuff = NextBuffer;
                 memcpy(workbuff, srcbuf, memsize);  // memory copy : workbuff <-- srcbuf
                 if (info->pointer_sort) {
